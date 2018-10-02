@@ -34,6 +34,9 @@ public struct RestOptions {
 
     /// An optional set of HTTP Headers to send with the call.
     public var httpHeaders: [String : String]?
+    
+    /// An optional set of query parameters to send with the call.
+    public var queryParams: [URLQueryItem]?
 
     /// The amount of time in `seconds` until the request times out.
     public var requestTimeoutSeconds = RestController.kDefaultRequestTimeout
@@ -52,6 +55,7 @@ public class RestController : NSObject, URLSessionDelegate {
     private static let kGetType = "GET"
     private static let kPutType = "PUT"
     private static let kDeleteType = "DELETE"
+    private static let kOptionsType = "OPTIONS"
     private static let kJsonType = "application/json"
     private static let kContentType = "Content-Type"
     private static let kAcceptKey = "Accept"
@@ -105,11 +109,17 @@ public class RestController : NSObject, URLSessionDelegate {
     }
 
     private func dataTask(relativePath: String?, httpMethod: String, accept: String, payload: Data?, options: RestOptions, callback: @escaping (Result<Data>, HTTPURLResponse?) -> ()) throws {
-        let restURL: URL;
+        var restURL: URL;
         if let relativeURL = relativePath {
             restURL = url.appendingPathComponent(relativeURL)
         } else {
             restURL = url
+        }
+        
+        if let queryParams = options.queryParams {
+            var urlComps = URLComponents(url: restURL, resolvingAgainstBaseURL: false)!
+            urlComps.queryItems = queryParams
+            restURL = urlComps.url!
         }
 
         var request = URLRequest(url: restURL, cachePolicy: .useProtocolCachePolicy, timeoutInterval: options.requestTimeoutSeconds)
@@ -203,6 +213,31 @@ public class RestController : NSObject, URLSessionDelegate {
     public func get<D: Decodable>(_ type: D.Type, at relativePath: String? = nil, options: RestOptions = RestOptions(), callback: @escaping (Result<D>, HTTPURLResponse?) -> ()) {
         let decodableDeserializer = DecodableDeserializer<D>()
         makeCall(relativePath, httpMethod: RestController.kGetType, payload: nil, responseDeserializer: decodableDeserializer, options: options, callback: callback)
+    }
+    
+    /// Performs a OPTIONS request to the server, capturing the output of the server using the supplied `Deserializer`.
+    ///
+    /// Note: This is an **asynchronous** call and will return immediately.  The network operation is done in the background.
+    ///
+    /// - parameter responseDeserializer: A `Deserializer` to handle de-serializing the response to.
+    /// - parameter relativePath: An **optional** parameter of a relative path to append to this instance.
+    /// - parameter options: An **optional** parameter of a `RestOptions` struct for this call.
+    /// - parameter callback: Called when the network operation has ended, giving back a Boxed `Result<T.ResponseType>` and a `NSHTTPURLResponse?` representing the response from the server. Note: The callback is **NOT** called on the main thread.
+    public func options<T: Deserializer>(withDeserializer responseDeserializer: T, at relativePath: String? = nil, options: RestOptions = RestOptions(), callback: @escaping (Result<T.ResponseType>, HTTPURLResponse?) -> ()) {
+        makeCall(relativePath, httpMethod: RestController.kOptionsType, payload: nil, responseDeserializer: responseDeserializer, options: options, callback: callback)
+    }
+    
+    /// Performs a OPTIONS request to the server, capturing the data object type response from the server.
+    ///
+    /// Note: This is an **asynchronous** call and will return immediately.  The network operation is done in the background.
+    ///
+    /// - parameter type: The type of object this get call returns. This type must conform to `Decodable`
+    /// - parameter relativePath: An **optional** parameter of a relative path of this inscatnaces main URL as setup at when created.
+    /// - parameter options: An **optional** parameter of a `RestOptions` struct containing any header fields to include with the call or a different expected status code.
+    /// - parameter callback: Called when the network operation has ended, giving back a Boxed `Result<D>` and a `NSHTTPURLResponse?` representing the response from the server. Note: The callback is **NOT** called on the main thread.
+    public func options<D: Decodable>(_ type: D.Type, at relativePath: String? = nil, options: RestOptions = RestOptions(), callback: @escaping (Result<D>, HTTPURLResponse?) -> ()) {
+        let decodableDeserializer = DecodableDeserializer<D>()
+        makeCall(relativePath, httpMethod: RestController.kOptionsType, payload: nil, responseDeserializer: decodableDeserializer, options: options, callback: callback)
     }
 
     /// Performs a POST request to the server, capturing the output of the server using the supplied `Deserializer`.
